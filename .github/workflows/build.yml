@@ -14,9 +14,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14          # Mac com chip Apple (M1/M2/M3/M4)
+          - os: macos-latest      # Mac com chip Apple (M1/M2/M3/M4)
             arquivo: BuscaAluguel-Mac-Apple.zip
-          - os: macos-13          # Mac com Intel
+          - os: macos-15-intel    # Mac com Intel
             arquivo: BuscaAluguel-Mac-Intel.zip
           - os: windows-latest
             arquivo: BuscaAluguel-Windows.zip
