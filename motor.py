@@ -417,51 +417,68 @@ def executar(cfg, log, parar=lambda: False):
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
 
             for site in sites:
-                log(f"\n=== {NOMES[site]} ===")
-                if site == "marketplace":
-                    login_facebook(page)
-                achados = {}
-                for u in urls(site, cfg):
-                    if not abrir(page, u):
-                        continue
-                    cookies(page)
-                    for _ in range(8 if site == "marketplace" else 3):
-                        page.mouse.wheel(0, 4000)
-                        time.sleep(1.2)
-                    novos = coletar(page, site)
-                    log(f" página: {len(novos)} anúncios")
-                    for k, v in novos.items():
-                        achados.setdefault(k, v)
-                    if site == "centris":
-                        for _ in range(int(cfg["max_paginas"]) - 1):
-                            try:
-                                nxt = page.query_selector("li.next:not(.inactive) a")
-                                if not nxt:
+                try:
+                    log(f"\n=== {NOMES[site]} ===")
+                    if site == "marketplace":
+                        login_facebook(page)
+                    achados = {}
+                    for u in urls(site, cfg):
+                        if not abrir(page, u):
+                            continue
+                        cookies(page)
+                        for _ in range(8 if site == "marketplace" else 3):
+                            page.mouse.wheel(0, 4000)
+                            time.sleep(1.2)
+                        novos = coletar(page, site)
+                        log(f" página: {len(novos)} anúncios")
+                        for k, v in novos.items():
+                            achados.setdefault(k, v)
+                        if site == "centris":
+                            for _ in range(int(cfg["max_paginas"]) - 1):
+                                try:
+                                    nxt = page.query_selector("li.next:not(.inactive) a")
+                                    if not nxt:
+                                        break
+                                    nxt.click()
+                                    time.sleep(2.5)
+                                    for k, v in coletar(page, site).items():
+                                        achados.setdefault(k, v)
+                                except Exception:
                                     break
-                                nxt.click()
-                                time.sleep(2.5)
-                                for k, v in coletar(page, site).items():
-                                    achados.setdefault(k, v)
-                            except Exception:
-                                break
-                novos = {k: v for k, v in achados.items() if k not in hist}
-                log(f" {len(achados)} encontrados, {len(novos)} novos.")
-                for i, (k, info) in enumerate(novos.items(), 1):
-                    log(f"   lendo {i}/{len(novos)}")
-                    txt = info["titulo"]
-                    if abrir(page, info["link"]):
-                        txt = info["titulo"] + "\n" + texto(page)
-                    status, res = avaliar(txt, cfg)
-                    linhas.append({"status": status, "Site": NOMES[site],
-                                   "Título": info["titulo"] or txt.strip().split("\n")[0][:150],
-                                   "Link": info["link"], "Encontrado em": agora, **res})
-                    hist[k] = {"link": info["link"], "visto_em": agora, "status": status}
-                    if i % 10 == 0:
-                        salvar_historico(hist)
-                salvar_historico(hist)
-            ctx.close()
+                    novos = {k: v for k, v in achados.items() if k not in hist}
+                    log(f" {len(achados)} encontrados, {len(novos)} novos.")
+                    for i, (k, info) in enumerate(novos.items(), 1):
+                        log(f"   lendo {i}/{len(novos)}")
+                        txt = info["titulo"]
+                        if abrir(page, info["link"]):
+                            txt = info["titulo"] + "\n" + texto(page)
+                        status, res = avaliar(txt, cfg)
+                        linha = {"status": status, "Site": NOMES[site],
+                                 "Título": info["titulo"] or txt.strip().split("\n")[0][:150],
+                                 "Link": info["link"], "Encontrado em": agora, **res}
+                        linhas.append(linha)
+                        hist[k] = {"link": info["link"], "visto_em": agora,
+                                   "status": status, "dados": linha}
+                        if i % 10 == 0:
+                            salvar_historico(hist)
+                    salvar_historico(hist)
+                except Parar:
+                    raise
+                except Exception as e:
+                    if "closed" in str(e).lower():
+                        log("\nA janela do navegador foi fechada.")
+                        raise Parar()
+                    log(f"\n! Erro no {NOMES[site]} ({e.__class__.__name__}). Indo para o próximo site.")
+            try:
+                ctx.close()
+            except Exception:
+                pass
     except Parar:
-        log("\nBusca interrompida. O que já foi lido está salvo.")
+        log("\nBusca interrompida. Gerando a planilha com o que já foi lido.")
+    except Exception as e:
+        if not linhas:
+            raise
+        log(f"\n! Erro: {e}\nGerando a planilha com o que já foi lido.")
     finally:
         salvar_historico(hist)
 

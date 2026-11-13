@@ -17,6 +17,10 @@ TAMANHOS = {"2 1/2": 2, "3 1/2": 3, "4 1/2": 4, "5 1/2": 5, "6 1/2": 6}
 def abrir_no_sistema(caminho):
     caminho = str(caminho)
     if sys.platform == "darwin":
+        # Planilhas abrem no Numbers (vem em todo Mac); se não houver, no app padrão
+        if caminho.endswith(".xlsx") and subprocess.call(
+                ["open", "-a", "Numbers", caminho]) == 0:
+            return
         subprocess.Popen(["open", caminho])
     elif sys.platform.startswith("win"):
         os.startfile(caminho)
@@ -169,7 +173,7 @@ class App(tk.Tk):
                         messagebox.showerror("Busca Aluguel", dado)
                     elif dado:
                         if messagebox.askyesno("Busca Aluguel",
-                                               "Busca concluída! Abrir o Excel agora?"):
+                                               ("Busca concluída! Abrir a planilha no Numbers agora?" if sys.platform == "darwin" else "Busca concluída! Abrir a planilha agora?")):
                             abrir_no_sistema(dado)
         except queue.Empty:
             pass
