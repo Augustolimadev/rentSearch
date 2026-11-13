@@ -1,0 +1,62 @@
+name: Gerar app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14          # Mac com chip Apple (M1/M2/M3/M4)
+            arquivo: BuscaAluguel-Mac-Apple.zip
+          - os: macos-13          # Mac com Intel
+            arquivo: BuscaAluguel-Mac-Intel.zip
+          - os: windows-latest
+            arquivo: BuscaAluguel-Windows.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependências
+        run: pip install playwright openpyxl pyinstaller
+      - name: Teste rápido dos filtros
+        run: python teste_filtros.py
+      - name: Gerar app
+        run: pyinstaller --noconfirm --windowed --name "Busca Aluguel" --collect-all playwright app.py
+      - name: Compactar (Mac)
+        if: runner.os == 'macOS'
+        run: ditto -c -k --keepParent "dist/Busca Aluguel.app" "${{ matrix.arquivo }}"
+      - name: Compactar (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path "dist/Busca Aluguel" -DestinationPath "${{ matrix.arquivo }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.arquivo }}
+          path: ${{ matrix.arquivo }}
+
+  publicar:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: saida
+          merge-multiple: true
+      - name: Publicar na página de downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ultima-versao -y --cleanup-tag || true
+          gh release create ultima-versao saida/*.zip \
+            --title "Busca Aluguel - última versão" \
+            --notes "Baixe o arquivo do seu computador: Mac-Apple (M1/M2/M3/M4), Mac-Intel ou Windows."
