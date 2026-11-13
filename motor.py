@@ -141,7 +141,7 @@ def urls(site, cfg):
                 if uma(u):
                     yield u
         elif site == "marketplace":
-            q = quote_plus(f"{c} {cfg['min_pecas']} 1/2")
+            q = quote_plus(f"{c} à louer")
             u = (f"https://www.facebook.com/marketplace/montreal/search?"
                  f"query={q}&maxPrice={pm}")
             if uma(u):
@@ -172,18 +172,24 @@ def checar_cidade(t, cfg):
     return FALHA, "fora da região"
 
 
-def checar_preco(t, cfg):
-    pads = [r"(\d{1,2}[ ,]?\d{3})(?:[.,]00)?\s*\$", r"\$\s*(\d{1,2}[ ,]?\d{3})",
-            r"(?<!\d)(\d{3})(?:[.,]00)?\s*\$", r"\$\s*(\d{3})(?!\d)"]
+_NUM_PRECO = r"(\d{1,2}(?:[ ,.]\d{3})|\d{3,4})(?:[.,]\d{2})?"
+
+
+def ler_preco(t):
+    """Primeiro preço do texto: '2 450 $', '$2,300.00', 'CA$1.487', '1500$'."""
     achados = []
-    for p in pads:
+    for p in [r"\$\s*" + _NUM_PRECO + r"(?!\d)", r"(?<![\d.,])" + _NUM_PRECO + r"\s*\$"]:
         for m in re.finditer(p, t):
-            v = _num(m.group(1))
-            if v and 500 <= v <= 9000:
+            v = int(re.sub(r"\D", "", m.group(1)))
+            if 300 <= v <= 9000:
                 achados.append((m.start(), v))
-    if not achados:
+    return min(achados)[1] if achados else None
+
+
+def checar_preco(t, cfg):
+    v = ler_preco(t)
+    if v is None:
         return DESC, None
-    v = min(achados)[1]
     return (OK if v <= int(cfg["preco_max"]) else FALHA), v
 
 
@@ -257,11 +263,13 @@ CRITERIOS = [("Cidade", checar_cidade), ("Preço", checar_preco),
              ("Garagem", checar_garagem), ("Ano", checar_idade)]
 
 
-def avaliar(texto, cfg):
+def avaliar(texto, cfg, texto_cidade=None):
+    """texto_cidade: se informado, a cidade é conferida só nele (ex.: cartão do Marketplace)."""
     t = norm(texto)
+    tc = norm(texto_cidade) if texto_cidade else t
     res, motivos, desc = {}, [], []
     for nome, f in CRITERIOS:
-        st, val = f(t, cfg)
+        st, val = f(tc if nome == "Cidade" else t, cfg)
         res[nome] = val if val is not None else "?"
         if st == FALHA:
             motivos.append(f"{nome}: {val}")
@@ -271,6 +279,22 @@ def avaliar(texto, cfg):
     res["Falta confirmar"] = ", ".join(desc)
     res["Motivo exclusão"] = "; ".join(motivos)
     return status, res
+
+
+PALAVRAS_ALUGUEL = ["louer", "location", "rent", "chambre", "bedroom", "bed", "appartement",
+                    "apartment", "condo", "logement", "1/2", "½", "maison", "house",
+                    "salle de bain", "bath", "duplex", "triplex", "loft"]
+
+
+def prefiltro_marketplace(cartao, cfg):
+    """Decide pelo cartão do Marketplace (preço | título | local) se vale abrir o anúncio."""
+    t = norm(cartao)
+    if not any(w in t for w in PALAVRAS_ALUGUEL):
+        return False
+    if checar_cidade(t, cfg)[0] != OK:
+        return False
+    v = ler_preco(t)
+    return v is None or v <= int(cfg["preco_max"])
 
 
 # ───────────────────────────── Excel ─────────────────────────────
@@ -284,7 +308,23 @@ def gerar_excel(linhas, arquivo):
     larg = [12, 50, 14, 9, 13, 11, 10, 18, 8, 26, 30, 17]
     cores = {"Atende": "C6EFCE", "Verificar": "FFEB9C", "Excluídos": "F2F2F2"}
     wb = Workbook()
-    wb.remove(wb.active)
+    r = wb.active
+    r.title = "Resumo"
+    r["A1"] = "Busca de aluguel"
+    r["A1"].font = Font(bold=True, size=14)
+    r["A2"] = datetime.now().strftime("Gerado em %Y-%m-%d %H:%M")
+    explic = {"Atende": "todos os critérios confirmados no anúncio",
+              "Verificar": "nada reprovado, mas falta alguma informação no anúncio",
+              "Excluídos": "reprovou em algum critério (veja o motivo)"}
+    for i, aba in enumerate(cores, 4):
+        n = sum(1 for x in linhas if x["status"] == aba)
+        r.cell(row=i, column=1, value=aba).font = Font(bold=True)
+        r.cell(row=i, column=1).fill = PatternFill("solid", fgColor=cores[aba])
+        r.cell(row=i, column=2, value=n)
+        r.cell(row=i, column=3, value=explic[aba])
+    r.column_dimensions["A"].width = 14
+    r.column_dimensions["B"].width = 8
+    r.column_dimensions["C"].width = 55
     for aba in cores:
         ws = wb.create_sheet(aba)
         ws.append(cols)
@@ -494,13 +534,20 @@ def executar(cfg, log, parar=lambda: False):
                                 except Exception:
                                     break
                     novos = {k: v for k, v in achados.items() if k not in hist}
-                    log(f" {len(achados)} encontrados, {len(novos)} novos.")
+                    if site == "marketplace":
+                        antes = len(novos)
+                        novos = {k: v for k, v in novos.items()
+                                 if prefiltro_marketplace(v["titulo"], cfg)}
+                        log(f" {antes - len(novos)} ignorados (outra cidade, preço alto "
+                            f"ou não é aluguel).")
+                    log(f" {len(achados)} encontrados, {len(novos)} novos para ler.")
                     for i, (k, info) in enumerate(novos.items(), 1):
                         log(f"   lendo {i}/{len(novos)}")
                         txt = info["titulo"]
                         if abrir(page, info["link"]):
                             txt = info["titulo"] + "\n" + texto(page)
-                        status, res = avaliar(txt, cfg)
+                        status, res = avaliar(
+                            txt, cfg, info["titulo"] if site == "marketplace" else None)
                         linha = {"status": status, "Site": NOMES[site],
                                  "Título": info["titulo"] or txt.strip().split("\n")[0][:150],
                                  "Link": info["link"], "Encontrado em": agora, **res}

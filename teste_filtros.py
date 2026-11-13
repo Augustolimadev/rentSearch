@@ -35,6 +35,19 @@ assert motor.PADROES["appartogo"].search(
 assert motor.PADROES["centris"].search(
     "https://www.centris.ca/fr/condo-appartement~a-louer~terrebonne-lachenaie/13990712")
 
+for txt, v in [("CA$1.487 | Appartement", 1487), ("2 450 $ / mois", 2450), ("$2,300.00", 2300),
+               ("1500$", 1500), ("CA$1 | Lachine 5 1/2", None), ("$1,895 - Available", 1895)]:
+    assert motor.ler_preco(motor.norm(txt)) == v, (txt, motor.ler_preco(motor.norm(txt)))
+pf = motor.prefiltro_marketplace
+assert pf("CA$2.100 | Appartement de 2 chambres et 1 salle de bain | Terrebonne, QC", cfg)
+assert not pf("CA$1.500 | 2011 Mazda 3 sport | Repentigny, QC", cfg)
+assert not pf("CA$1.487 | Appartement de 3 chambres | Longueuil, QC", cfg)
+assert not pf("CA$2.950 | Condo 4 1/2 | Mascouche, QC", cfg)
+st, res = motor.avaliar("busca: Repentigny\nCA$1.400 | Appartement 2 chambres | Montréal, QC\ngarage",
+                        cfg, "CA$1.400 | Appartement 2 chambres | Montréal, QC")
+assert st == "Excluídos", res
+print("Preço e pré-filtro do Marketplace OK")
+
 import tempfile, os
 f = os.path.join(tempfile.gettempdir(), "teste.xlsx")
 motor.gerar_excel([{"status": "Atende", "Site": "Centris", "Título": "x",
