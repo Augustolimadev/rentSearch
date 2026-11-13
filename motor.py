@@ -316,6 +316,74 @@ def _canal():
     return ["chrome", None]
 
 
+def abrir_navegador(p):
+    """Abre o Chrome do usuário com um perfil próprio do app (guarda logins)."""
+    erro = None
+    for canal in _canal():
+        try:
+            return p.chromium.launch_persistent_context(
+                str(PERFIL), channel=canal, headless=False, locale="fr-CA",
+                viewport={"width": 1300, "height": 900},
+                ignore_default_args=["--enable-automation"],
+                args=["--disable-blink-features=AutomationControlled"])
+        except Exception as e:
+            erro = e
+    raise RuntimeError("Não encontrei o Google Chrome. Instale o Chrome "
+                       f"(google.com/chrome) e tente de novo.\n{erro}")
+
+
+def facebook_conectado(ctx):
+    try:
+        return any(c["name"] == "c_user" for c in ctx.cookies("https://www.facebook.com"))
+    except Exception:
+        return False
+
+
+def conectar_facebook(log, parar=lambda: False):
+    """Abre o Facebook para o usuário fazer login com calma. Retorna True se conectou."""
+    from playwright.sync_api import sync_playwright
+    PASTA.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as p:
+        ctx = abrir_navegador(p)
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        if facebook_conectado(ctx):
+            log("O Facebook já está conectado.")
+            ctx.close()
+            return True
+        try:
+            page.goto("https://www.facebook.com/login", timeout=45000)
+        except Exception:
+            pass
+        log("Faça login no Facebook na janela do Chrome.\n"
+            "Se o Facebook pedir código de confirmação, siga as instruções dele.\n"
+            "Quando terminar, a janela fecha sozinha. (Tempo máximo: 10 min)")
+        for i in range(300):
+            if parar():
+                break
+            time.sleep(2)
+            if facebook_conectado(ctx):
+                time.sleep(3)
+                log("Facebook conectado! Agora é só clicar em Buscar.")
+                try:
+                    ctx.close()
+                except Exception:
+                    pass
+                return True
+            try:
+                if page.is_closed():
+                    break
+            except Exception:
+                break
+            if i and i % 30 == 0:
+                log(f"   aguardando login... ({i * 2 // 60} min)")
+        log("Login no Facebook não concluído.")
+        try:
+            ctx.close()
+        except Exception:
+            pass
+        return False
+
+
 def executar(cfg, log, parar=lambda: False):
     """Roda a busca completa. log(str) mostra mensagens; parar() -> True cancela.
     Retorna (caminho_excel | None, contagens)."""
@@ -389,38 +457,18 @@ def executar(cfg, log, parar=lambda: False):
                 pass
         return ""
 
-    def login_facebook(page):
-        abrir(page, "https://www.facebook.com/marketplace/")
-        if "login" in page.url or page.query_selector("input[name='email']"):
-            log(">>> Faça login no Facebook na janela do navegador (até 5 min).")
-            for _ in range(150):
-                checa()
-                time.sleep(2)
-                if "login" not in page.url and not page.query_selector("input[name='email']"):
-                    break
-            time.sleep(3)
-
     try:
         with sync_playwright() as p:
-            ctx, erro = None, None
-            for canal in _canal():
-                try:
-                    ctx = p.chromium.launch_persistent_context(
-                        str(PERFIL), channel=canal, headless=False, locale="fr-CA",
-                        viewport={"width": 1300, "height": 900})
-                    break
-                except Exception as e:
-                    erro = e
-            if ctx is None:
-                raise RuntimeError("Não encontrei o Google Chrome. Instale o Chrome "
-                                   f"(google.com/chrome) e tente de novo.\n{erro}")
+            ctx = abrir_navegador(p)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
 
             for site in sites:
                 try:
                     log(f"\n=== {NOMES[site]} ===")
-                    if site == "marketplace":
-                        login_facebook(page)
+                    if site == "marketplace" and not facebook_conectado(ctx):
+                        log(" Facebook não conectado — pulando o Marketplace.\n"
+                            " Use o botão 'Conectar Facebook' e depois busque de novo.")
+                        continue
                     achados = {}
                     for u in urls(site, cfg):
                         if not abrir(page, u):

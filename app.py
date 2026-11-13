@@ -88,7 +88,9 @@ class App(tk.Tk):
         self.btn_buscar.pack(side="left")
         self.btn_parar = ttk.Button(b, text="Parar", command=self.parar, state="disabled")
         self.btn_parar.pack(side="left", padx=6)
-        ttk.Button(b, text="Abrir pasta dos resultados",
+        self.btn_fb = ttk.Button(b, text="Conectar Facebook", command=self.conectar_fb)
+        self.btn_fb.pack(side="left", padx=6)
+        ttk.Button(b, text="Abrir pasta",
                    command=self.abrir_pasta).pack(side="left", padx=6)
         ttk.Button(b, text="Limpar histórico", command=self.limpar).pack(side="right")
 
@@ -97,6 +99,7 @@ class App(tk.Tk):
         self.log.pack(fill="both", expand=True, padx=12, pady=(6, 12))
         self._escrever("Ajuste os critérios e clique em Buscar.\n"
                        "Uma janela do Chrome vai abrir e percorrer os sites sozinha — não feche.\n"
+                       "Para incluir o Marketplace, clique antes em 'Conectar Facebook' (uma vez só).\n"
                        f"Os resultados ficam em: {motor.PASTA}\n")
 
     # ── ações ──
@@ -129,6 +132,7 @@ class App(tk.Tk):
         motor.salvar_config(cfg)
         self.parar_flag.clear()
         self.btn_buscar.config(state="disabled")
+        self.btn_fb.config(state="disabled")
         self.btn_parar.config(state="normal")
         self._escrever("\n— Iniciando busca —\n")
         self.thread = threading.Thread(target=self._rodar, daemon=True)
@@ -141,6 +145,22 @@ class App(tk.Tk):
             self.fila.put(("fim", arq))
         except Exception as e:
             self.fila.put(("erro", str(e)))
+
+    def conectar_fb(self):
+        self.parar_flag.clear()
+        self.btn_buscar.config(state="disabled")
+        self.btn_fb.config(state="disabled")
+        self.btn_parar.config(state="normal")
+        self._escrever("\n— Conectando Facebook —\n")
+
+        def rodar():
+            try:
+                motor.conectar_facebook(lambda m: self.fila.put(("log", m)),
+                                        self.parar_flag.is_set)
+                self.fila.put(("fim", None))
+            except Exception as e:
+                self.fila.put(("erro", str(e)))
+        threading.Thread(target=rodar, daemon=True).start()
 
     def parar(self):
         self.parar_flag.set()
@@ -167,6 +187,7 @@ class App(tk.Tk):
                     self._escrever(dado + "\n")
                 else:
                     self.btn_buscar.config(state="normal")
+                    self.btn_fb.config(state="normal")
                     self.btn_parar.config(state="disabled")
                     if tipo == "erro":
                         self._escrever(f"\nERRO: {dado}\n")

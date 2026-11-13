@@ -19,7 +19,7 @@ O app precisa do Google Chrome instalado (google.com/chrome).
 
 1. Ajuste os critérios na janela (cidades, preço, tamanho, área, idade do prédio, garagem).
 2. Clique em **Buscar**. Uma janela do Chrome abre e percorre os sites sozinha. Não feche essa janela.
-3. Na primeira vez, se o Facebook pedir login, faça o login nessa janela do Chrome.
+3. Para incluir o Facebook Marketplace: antes da primeira busca, clique em **Conectar Facebook**, faça login na janela do Chrome e espere ela fechar sozinha. Só precisa fazer isso uma vez. Sem isso, a busca funciona normalmente nos outros sites e pula o Marketplace.
 4. No final, o app oferece abrir o Excel.
 
 Os resultados ficam em Documentos > Busca Aluguel. O Excel tem 3 abas:
